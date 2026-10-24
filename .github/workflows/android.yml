@@ -139,6 +139,9 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          # Tags with a dash (v0.2.0-test.1, v0.2.0-beta) are published as pre-releases.
+          PRE=""
+          if [[ "${GITHUB_REF_NAME}" == *-* ]]; then PRE="--prerelease"; fi
           gh release create "${GITHUB_REF_NAME}" "${APK_PATH}" \
             --title "Cube Guy Idle ${APP_VERSION}" \
-            --generate-notes
+            --generate-notes ${PRE}
