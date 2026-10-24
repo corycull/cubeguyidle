@@ -139,6 +139,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          # A release created on github.com (which also creates the tag) just gets the APK attached.
+          if gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1; then
+            gh release upload "${GITHUB_REF_NAME}" "${APK_PATH}" --clobber
+            exit 0
+          fi
           # Tags with a dash (v0.2.0-test.1, v0.2.0-beta) are published as pre-releases.
           PRE=""
           if [[ "${GITHUB_REF_NAME}" == *-* ]]; then PRE="--prerelease"; fi
