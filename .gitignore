@@ -1,0 +1,13 @@
+.godot/
+build/
+*.tmp
+
+# Signing keys never belong in a public repo
+keystore/
+*.jks
+*.keystore
+
+# Built apps go in GitHub Releases, not git
+*.apk
+*.aab
+*.idsig
