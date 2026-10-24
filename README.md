@@ -54,6 +54,25 @@ Most balance numbers live as constants at the top of `game_state.gd`: `ZONES`, `
 4. Open **Project > Export**. The **Android** preset is already set up (package `com.cubeguy.idle`). Turn on **Package > Signed** and add your release keystore, or export unsigned and sign it yourself.
 5. Click **Export Project**.
 
+## Automatic builds (GitHub Actions)
+
+`.github/workflows/android.yml` runs on every push to `main` and every pull request:
+
+1. Boots the game and runs a 3-hour playtest bot. The build fails on any script error or broken state.
+2. Exports the APK and signs it.
+3. Attaches the APK to the run. Download it from the **Actions** tab, under the run's **Artifacts**.
+
+To publish a release, push a version tag. The APK is attached to a new GitHub Release:
+
+```
+git tag v0.2.0
+git push origin v0.2.0
+```
+
+**Signing:** add these three repository secrets under **Settings > Secrets and variables > Actions**:
+`ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD` and `ANDROID_KEY_ALIAS`.
+Without them, builds are signed with a throwaway key and named `-unofficial`. Those install fine but can't update a copy signed with your real key.
+
 ## Tests
 
 Two test scenes are excluded from the APK:

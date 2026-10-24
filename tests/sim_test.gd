@@ -2,10 +2,11 @@ extends Node
 ## Headless playtest bot. Fast-forwards the game clock and plays like a
 ## reasonable player: fills pens, explores, captures, breeds, hatches, trains,
 ## trades and buys upgrades. Prints pacing and fails loudly on bad state.
-## Run: godot --headless --path . res://tests/sim.tscn
+## Run: godot --headless --path . res://tests/sim.tscn [-- --hours=30]
+## Exits with code 1 if any check fails, so CI can gate on it.
 
 const STEP := 5.0
-const HOURS := 30.0
+const DEFAULT_HOURS := 30.0
 
 var log_lines: Array = []
 var unlock_times := {}
@@ -16,7 +17,11 @@ var debug_fails := 0
 func _ready() -> void:
 	Game.reset_save()
 	Game.toast.connect(func(t): if t.begins_with("NEW MODE") or t.find("milestone") >= 0: milestone_log.append("[%s] %s" % [_clock(), t]))
-	var total := HOURS * 3600.0
+	var hours := DEFAULT_HOURS
+	for arg in OS.get_cmdline_user_args():
+		if arg.begins_with("--hours="):
+			hours = float(arg.get_slice("=", 1))
+	var total := hours * 3600.0
 	var elapsed := 0.0
 	var next_report := 0.0
 	while elapsed < total:
