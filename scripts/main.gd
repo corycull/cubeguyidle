@@ -41,6 +41,8 @@ var popup_dyn: Array = []
 var reveal_queue: Array = []
 var _dirty := false
 var _haggle := {}
+var _upgrade_watch := 0.0
+var _last_upgrade_sig := ""
 
 func _ready() -> void:
 	theme = _make_theme()
@@ -54,7 +56,14 @@ func _ready() -> void:
 func _process(_delta: float) -> void:
 	squares_label.text = "%s Squares" % Game.fmt(Game.squares)
 	rate_label.text = "+%s / sec" % Game.fmt(Game.rate)
-	roster_label.text = "Cubes %d/%d" % [Game.cubes.size(), Game.roster_cap()]
+	roster_label.text = ("%d/%d cubes" % [Game.cubes.size(), Game.roster_cap()]) if Game.cubes.size() > 0 else "No cubes yet"
+	_upgrade_watch += _delta
+	if _upgrade_watch >= 1.0:
+		_upgrade_watch = 0.0
+		var sig := _upgrade_sig()
+		if sig != _last_upgrade_sig:
+			_last_upgrade_sig = sig
+			_on_structure()
 	narrator_label.text = Game.narrator_line
 	_run_dyn(dyn)
 	_run_dyn(popup_dyn)
@@ -125,7 +134,7 @@ func _build_shell() -> void:
 	add_child(bg)
 	var margin := MarginContainer.new()
 	margin.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	var safe_top := 36
+	var safe_top := 76
 	margin.add_theme_constant_override("margin_left", 16)
 	margin.add_theme_constant_override("margin_right", 16)
 	margin.add_theme_constant_override("margin_top", safe_top)
@@ -138,25 +147,19 @@ func _build_shell() -> void:
 	var top := PanelContainer.new()
 	top.add_theme_stylebox_override("panel", _sb(PANEL2, 22, 20, 14))
 	root.add_child(top)
-	var top_row := HBoxContainer.new()
-	top.add_child(top_row)
-	var left := VBoxContainer.new()
-	left.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	left.add_theme_constant_override("separation", 0)
-	top_row.add_child(left)
-	squares_label = _lbl("", 36, ACCENT)
-	left.add_child(squares_label)
-	rate_label = _lbl("", 20, DIM)
-	left.add_child(rate_label)
-	var right := VBoxContainer.new()
-	right.alignment = BoxContainer.ALIGNMENT_CENTER
-	top_row.add_child(right)
-	var title := _lbl("CUBE GUY IDLE", 18, TEXT)
-	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	right.add_child(title)
-	roster_label = _lbl("", 20, DIM)
-	roster_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	right.add_child(roster_label)
+	var counter := VBoxContainer.new()
+	counter.alignment = BoxContainer.ALIGNMENT_CENTER
+	counter.add_theme_constant_override("separation", 2)
+	top.add_child(counter)
+	squares_label = _lbl("", 40, ACCENT)
+	squares_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	counter.add_child(squares_label)
+	rate_label = _lbl("", 22, TEXT)
+	rate_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	counter.add_child(rate_label)
+	roster_label = _lbl("", 17, DIM)
+	roster_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	counter.add_child(roster_label)
 
 	narrator_label = _lbl("", 18, DIM, true)
 	narrator_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -316,12 +319,30 @@ func _cube_row(parent: Container, c: Dictionary, buttons: Array, extra: Callable
 			bh.add_child(bt)
 	return v
 
-func _upgrades(mode: int) -> void:
-	var sec := _section(content, "Upgrades")
+## An upgrade is shown once it's available and the player has earned
+## at least 30% of its price, so the early screens stay uncluttered.
+func _upgrade_visible(id: String) -> bool:
+	if not Game.upgrade_available(id):
+		return false
+	return int(Game.upgrades.get(id, 0)) > 0 or Game.lifetime_squares >= Game.upgrade_cost(id) * 0.3
+
+func _upgrade_sig() -> String:
+	var ids: Array = []
 	for id in Game.UPGRADES:
+		if _upgrade_visible(id):
+			ids.append(id)
+	return ",".join(ids)
+
+func _upgrades(mode: int) -> void:
+	var shown: Array = []
+	for id in Game.UPGRADES:
+		if int(Game.UPGRADES[id].mode) == mode and _upgrade_visible(id):
+			shown.append(id)
+	if shown.is_empty():
+		return
+	var sec := _section(content, "Upgrades")
+	for id in shown:
 		var u: Dictionary = Game.UPGRADES[id]
-		if int(u.mode) != mode:
-			continue
 		var h := _row()
 		sec.add_child(h)
 		var v := VBoxContainer.new()
@@ -363,6 +384,9 @@ func _lock_hint(mode: int) -> String:
 
 func _rebuild() -> void:
 	_dirty = false
+	for s in SCREENS:
+		if s.id == screen and int(s.mode) > 0 and not Game.unlocked.get(int(s.mode), false):
+			screen = "ranch"
 	var scroll := content_scroll.scroll_vertical
 	for ch in content.get_children():
 		ch.queue_free()
@@ -370,8 +394,10 @@ func _rebuild() -> void:
 	for s in SCREENS:
 		var b: Button = nav_buttons[s.id]
 		var locked: bool = int(s.mode) > 0 and not Game.unlocked.get(int(s.mode), false)
-		b.text = s.label if not locked else s.label + "\n(locked)"
-		b.add_theme_font_size_override("font_size", 20 if not locked else 15)
+		if s.id == "codex":
+			locked = not Game.unlocked.get(2, false)
+		b.visible = not locked
+		b.text = s.label
 		if s.id == screen:
 			b.add_theme_stylebox_override("normal", _sb(ACCENT))
 			b.add_theme_color_override("font_color", BG)
@@ -393,8 +419,83 @@ func _restore_scroll(v: int) -> void:
 
 # ------------------------------------------------------------------ ranch
 
+func _build_welcome() -> void:
+	var spacer := Control.new()
+	spacer.custom_minimum_size = Vector2(0, 40)
+	content.add_child(spacer)
+	var box := VBoxContainer.new()
+	box.add_theme_constant_override("separation", 18)
+	content.add_child(box)
+	var t1 := _lbl("Welcome to", 28, DIM)
+	t1.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	box.add_child(t1)
+	var t2 := _lbl("Cube Guy Idle", 52, ACCENT)
+	t2.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	box.add_child(t2)
+	var blurb := _lbl("Your ranch is empty. Your reputation is in ruins. Someone left a present on the doorstep.", 22, TEXT, true)
+	blurb.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	box.add_child(blurb)
+	var center := CenterContainer.new()
+	box.add_child(center)
+	var gift := Button.new()
+	gift.flat = true
+	gift.custom_minimum_size = Vector2(280, 280)
+	gift.focus_mode = Control.FOCUS_NONE
+	gift.pressed.connect(Game.claim_gift)
+	center.add_child(gift)
+	var art := Control.new()
+	art.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	art.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	art.pivot_offset = Vector2(140, 140)
+	art.draw.connect(_draw_gift.bind(art))
+	gift.add_child(art)
+	var tw := art.create_tween().set_loops()
+	tw.tween_property(art, "scale", Vector2(1.06, 1.06), 0.6).set_trans(Tween.TRANS_SINE)
+	tw.tween_property(art, "scale", Vector2(1.0, 1.0), 0.6).set_trans(Tween.TRANS_SINE)
+	var hint := _lbl("Tap the gift", 22, DIM)
+	hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	box.add_child(hint)
+
+func _draw_gift(g: Control) -> void:
+	var c := g.size / 2.0
+	var w := 170.0
+	var body := Rect2(c.x - w / 2.0, c.y - 20.0, w, 120.0)
+	var lid := Rect2(c.x - w / 2.0 - 12.0, c.y - 58.0, w + 24.0, 42.0)
+	var box_col := Color("e2457a")
+	var ribbon := ACCENT
+	g.draw_rect(Rect2(body.position + Vector2(8, 10), body.size), Color(0, 0, 0, 0.25))
+	g.draw_rect(body, box_col)
+	g.draw_rect(lid, box_col.lightened(0.15))
+	g.draw_rect(Rect2(c.x - 14.0, lid.position.y, 28.0, body.end.y - lid.position.y), ribbon)
+	g.draw_rect(Rect2(lid.position.x, lid.position.y + 14.0, lid.size.x, 14.0), ribbon)
+	for side in [-1.0, 1.0]:
+		var loop := PackedVector2Array()
+		for i in 24:
+			var a := TAU * i / 24.0
+			loop.append(Vector2(c.x + side * 34.0 + cos(a) * 32.0, lid.position.y - 18.0 + sin(a) * 18.0))
+		g.draw_colored_polygon(loop, ribbon)
+		g.draw_colored_polygon(_shrink(loop, Vector2(c.x + side * 34.0, lid.position.y - 18.0), 0.45), box_col.lightened(0.15))
+	g.draw_circle(Vector2(c.x, lid.position.y - 14.0), 14.0, ribbon.darkened(0.15))
+	g.draw_string(ThemeDB.fallback_font, Vector2(c.x - 30.0, body.position.y + 78.0), "?", HORIZONTAL_ALIGNMENT_CENTER, 60, 52, Color(1, 1, 1, 0.85))
+
+func _shrink(pts: PackedVector2Array, center: Vector2, f: float) -> PackedVector2Array:
+	var out := PackedVector2Array()
+	for p in pts:
+		out.append(center + (p - center) * f)
+	return out
+
 func _build_ranch() -> void:
-	var head := _section(content, "The Ranch", "Cubes in pens make Squares. Pen mates boost (or annoy) each other through their traits.")
+	if not Game.story.gift_claimed:
+		_build_welcome()
+		return
+	var working := false
+	for p in Game.pens:
+		if p.size() > 0:
+			working = true
+	if not working and Game.lifetime_squares <= 0.0:
+		var tip := _section(content, "Put Cubert to work", "Cubert is sitting in the barn doing nothing. Tap \"To pen\" to move him into Pen 1 and start making Squares.")
+		tip.get_parent().add_theme_stylebox_override("panel", _sb(Color(ACCENT, 0.18), 20, 16, 14))
+	var head := _section(content, "The Ranch", "Cubes in pens make Squares.")
 	var rl := _lbl("", 22, GOOD)
 	head.add_child(rl)
 	_dyn(dyn, rl, func(): return "Ranch output: %s Squares/sec" % Game.fmt(Game.rate))
@@ -419,7 +520,10 @@ func _build_ranch() -> void:
 		barn.add_child(_lbl("Everyone's working. Suspiciously productive.", 20, DIM))
 	for c in idle:
 		var cid := int(c.id)
-		_cube_row(barn, c, [["To pen", _quick_pen.bind(cid)], ["Expedition", func(): Game.assign_team(cid)]])
+		var acts: Array = [["To pen", _quick_pen.bind(cid)]]
+		if Game.unlocked.get(2, false):
+			acts.append(["Expedition", func(): Game.assign_team(cid)])
+		_cube_row(barn, c, acts)
 	_upgrades(1)
 
 func _idle_filter(c: Dictionary) -> bool:
@@ -843,7 +947,7 @@ func show_cube_details(id: int) -> void:
 		acts.add_child(_btn("Unassign", func(): Game.unassign(id); show_cube_details(id), 20))
 	if c.job != "pen":
 		acts.add_child(_btn("To pen", func(): close_popup(); _quick_pen(id), 20))
-	if c.job != "team":
+	if c.job != "team" and Game.unlocked.get(2, false):
 		acts.add_child(_btn("Expedition", func(): close_popup(); Game.assign_team(id), 20))
 	acts.add_child(_btn("Release (+%s)" % Game.fmt(Game.lib.value(c) * 0.2), func(): _confirm_release(id), 20))
 

@@ -16,6 +16,7 @@ var debug_fails := 0
 
 func _ready() -> void:
 	Game.reset_save()
+	Game.claim_gift()
 	Game.toast.connect(func(t): if t.begins_with("NEW MODE") or t.find("milestone") >= 0: milestone_log.append("[%s] %s" % [_clock(), t]))
 	var hours := DEFAULT_HOURS
 	for arg in OS.get_cmdline_user_args():
@@ -172,6 +173,8 @@ func _sell_weakest() -> bool:
 	return false
 
 func _fill_team() -> void:
+	if not Game.unlocked[2]:
+		return
 	var idle := _idle()
 	idle.sort_custom(func(a, b): return _score_explore(a) > _score_explore(b))
 	for c in idle:

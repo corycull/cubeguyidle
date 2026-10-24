@@ -29,7 +29,7 @@ const TOOLS := [
 ]
 
 const UPGRADES := {
-	"pen": {"name": "New Pen", "desc": "Another pen for cubes to loaf in", "base": 60.0, "growth": 4.5, "max": 5, "mode": 1},
+	"pen": {"name": "New Pen", "desc": "Another pen for cubes to loaf in", "base": 5000.0, "growth": 6.0, "max": 5, "mode": 1, "needs": 5},
 	"pen_cap": {"name": "Bigger Pens", "desc": "+1 cube per pen", "base": 40.0, "growth": 3.2, "max": 7, "mode": 1},
 	"barn": {"name": "Barn Extension", "desc": "+8 roster space", "base": 80.0, "growth": 3.0, "max": 10, "mode": 1},
 	"boots": {"name": "Hiking Boots", "desc": "+10% expedition power", "base": 100.0, "growth": 3.0, "max": 10, "mode": 2},
@@ -94,7 +94,9 @@ var zone_progress := 0.0
 var encounters: Array = []
 var encounter_timer := 30.0
 var upgrades := {}
-var unlocked := {1: true, 2: true, 3: false, 4: false, 5: false}
+var unlocked := {1: true, 2: false, 3: false, 4: false, 5: false}
+## Opening-sequence flags: the welcome gift and the stray cube that opens the Wilds.
+var story := {"gift_claimed": false, "stray_arrived": false}
 var milestones := {1: 0, 2: 0, 3: 0, 4: 0, 5: 0}
 var counters := {"eggs_hatched": 0, "trades": 0, "captures": 0, "train_points": 0.0, "acquired": 0, "rocks": 0}
 var codex := {}
@@ -142,7 +144,7 @@ func now() -> float:
 # ------------------------------------------------------------------ setup
 
 func new_game() -> void:
-	squares = 30.0
+	squares = 0.0
 	lifetime_squares = 0.0
 	cubes.clear()
 	next_id = 1
@@ -160,7 +162,7 @@ func new_game() -> void:
 	zone_progress = 0.0
 	encounters = []
 	encounter_timer = 30.0
-	unlocked = {1: true, 2: true, 3: false, 4: false, 5: false}
+	unlocked = {1: true, 2: false, 3: false, 4: false, 5: false}
 	milestones = {1: 0, 2: 0, 3: 0, 4: 0, 5: 0}
 	counters = {"eggs_hatched": 0, "trades": 0, "captures": 0, "train_points": 0.0, "acquired": 0, "rocks": 0}
 	codex = {}
@@ -169,38 +171,54 @@ func new_game() -> void:
 	gary_stock = []
 	gary_restock_at = 0.0
 	deal_ready_at = 0.0
-	var c1: Dictionary = lib.new_wild(rng, _take_id(), 0, 0.0)
-	c1.name = "Cubert"
-	c1.traits = ["hard_worker"]
-	c1.color = "ffd43b"
-	c1.size = 1
-	c1.appendage = 1
-	c1.origin = "starter"
-	c1.rarity = lib.compute_rarity(c1)
-	var c2: Dictionary = lib.new_wild(rng, _take_id(), 0, 0.0)
-	c2.name = "Squarah"
-	c2.traits = ["fidgety"]
-	c2.color = "4dabf7"
-	c2.size = 1
-	c2.origin = "starter"
-	c2.rarity = lib.compute_rarity(c2)
-	# Fixed starter stats so Zone 1 is always clearable and the first minute feels the same for everyone.
-	for s in lib.STATS:
-		c1.base[s] = 10.0
-		c1.potential[s] = 25.0
-		c2.base[s] = 11.0
-		c2.potential[s] = 28.0
-	c1.base["CRN"] = 12.0
-	c1.rarity = lib.compute_rarity(c1)
-	c2.rarity = lib.compute_rarity(c2)
-	_add_cube(c1)
-	_add_cube(c2)
-	assign_pen(c1.id, 0)
-	assign_team(c2.id)
+	story = {"gift_claimed": false, "stray_arrived": false}
 	last_tick = now()
 	next_audit = rng.randf_range(5400.0, 10800.0)
 	_check_unlocks()
-	toast.emit("Welcome to the ranch. Those two cubes are all you have. Don't get attached. Get attached.")
+
+const STRAY_AT := 25.0
+
+func _starter_cube(nm: String, color: String, stat: float) -> Dictionary:
+	var c: Dictionary = lib.new_wild(rng, _take_id(), 0, 0.0)
+	c.name = nm
+	c.traits = []
+	c.color = color
+	c.size = 1
+	c.material = 0
+	c.pattern = 0
+	c.appendage = 0
+	c.eyes = 2
+	c.origin = "starter"
+	for st in lib.STATS:
+		c.base[st] = stat
+		c.potential[st] = stat * 3.0
+	return c
+
+## The welcome gift. Cubert is deliberately bad: 0.4 Squares/sec, no traits.
+func claim_gift() -> void:
+	if story.gift_claimed:
+		return
+	story.gift_claimed = true
+	var c := _starter_cube("Cubert", "ffd43b", 2.0)
+	c.base["CRN"] = 2.5
+	c.potential["CRN"] = 8.0
+	c.rarity = lib.compute_rarity(c)
+	_add_cube(c)
+	structure_changed.emit()
+	reveal.emit(c, "WELCOME GIFT!")
+
+## Once the ranch has earned its first Squares, a stray wanders in and the Wilds open.
+func _check_story() -> void:
+	if story.gift_claimed and not story.stray_arrived and lifetime_squares >= STRAY_AT:
+		story.stray_arrived = true
+		var c := _starter_cube("Squarah", "4dabf7", 9.0)
+		c.traits = ["fidgety"]
+		c.appendage = 1
+		c.rarity = lib.compute_rarity(c)
+		_add_cube(c)
+		toast.emit("A stray cube wandered onto the ranch. It looks like it wants to explore.")
+		structure_changed.emit()
+		reveal.emit(c, "A STRAY APPEARS!")
 
 func _take_id() -> int:
 	next_id += 1
@@ -449,6 +467,7 @@ func tick(dt: float, offline: bool) -> Dictionary:
 		next_audit = rng.randf_range(5400.0, 10800.0)
 		_irs_audit()
 	_refresh_traders()
+	_check_story()
 	_check_milestones()
 	_check_unlocks()
 	return report
@@ -711,7 +730,11 @@ func _award_trait_egg(mode: int, idx: int) -> void:
 
 func _check_unlocks() -> void:
 	var changed := false
-	if not unlocked[3] and cubes.size() >= 2:
+	if not unlocked[2] and cubes.size() >= 2:
+		unlocked[2] = true
+		changed = true
+		toast.emit("NEW MODE: The Wilds. Send a cube out to find more cubes.")
+	if not unlocked[3] and int(counters.acquired) >= 3:
 		unlocked[3] = true
 		changed = true
 		nests = [{"a": -1, "b": -1, "left": 0.0}]
@@ -832,9 +855,13 @@ func assign_nest(id: int, box: int, side: String) -> bool:
 	structure_changed.emit()
 	return true
 
+func upgrade_available(id: String) -> bool:
+	var u: Dictionary = UPGRADES[id]
+	return unlocked.get(int(u.mode), false) and unlocked.get(int(u.get("needs", u.mode)), false)
+
 func buy_upgrade(id: String) -> bool:
 	var u: Dictionary = UPGRADES[id]
-	if int(upgrades.get(id, 0)) >= int(u.max):
+	if int(upgrades.get(id, 0)) >= int(u.max) or not upgrade_available(id):
 		return false
 	var cost := upgrade_cost(id)
 	if squares < cost:
@@ -1059,7 +1086,7 @@ func save_game() -> void:
 		"upgrades": upgrades, "unlocked": unlocked, "milestones": milestones, "counters": counters,
 		"codex": codex, "hourly_accum": hourly_accum, "next_audit": next_audit,
 		"trader_cooldown": trader_cooldown, "gary_stock": gary_stock, "gary_restock_at": gary_restock_at,
-		"deal_ready_at": deal_ready_at, "last_tick": last_tick,
+		"deal_ready_at": deal_ready_at, "last_tick": last_tick, "story": story,
 	}
 	var f := FileAccess.open(SAVE_PATH, FileAccess.WRITE)
 	if f:
@@ -1140,6 +1167,11 @@ func load_game() -> bool:
 	gary_restock_at = float(d.get("gary_restock_at", 0.0))
 	deal_ready_at = float(d.get("deal_ready_at", 0.0))
 	last_tick = float(d.get("last_tick", now()))
+	var st: Dictionary = d.get("story", {})
+	story = {
+		"gift_claimed": bool(st.get("gift_claimed", cubes.size() > 0)),
+		"stray_arrived": bool(st.get("stray_arrived", cubes.size() > 1)),
+	}
 	_sanitize_times()
 	_check_unlocks()
 	var away := now() - last_tick

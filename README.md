@@ -103,6 +103,10 @@ Pacing from the bot, which plays every 20 seconds. Real players will be slower.
   - Barn Burner: doubles output at :00–:10 each hour.
   - Deal of a Lifetime: triple payout once a day.
   - Accidentally Immortal: can't be released, but traders accept it. Otherwise immortal cubes clog the barn and soft-lock the game.
+- The game opens on a welcome screen with a gift that delivers Cubert (no traits, 0.4 Squares/sec). Placing him in a pen starts production. At 25 lifetime Squares, a stray cube arrives and the Wilds open.
+- Mode tabs stay hidden until each mode unlocks. Upgrades appear once you've earned 30% of their price.
+- New Pen is a later upgrade: it unlocks with the Trading Post and starts at 5,000 Squares.
+- The Nesting Boxes unlock at 3 cubes acquired, after the Wilds.
 - The Trading Post unlocks at Zone 5 (about 10 minutes in) rather than hour 2.
 - Gary restocks every 4 hours or on demand for Squares.
 - Not in this slice: modes 6–30, prestige layers, Vibes/Lore currencies, the Glue Factory (release refunds a little instead), and seasons.

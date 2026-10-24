@@ -8,14 +8,31 @@ var main: Control
 
 func _ready() -> void:
 	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(OUT))
-	if OS.get_cmdline_user_args().has("--fresh"):
+	var fresh := OS.get_cmdline_user_args().has("--fresh")
+	if fresh:
 		Game.reset_save()
-	for k in Game.unlocked:
-		Game.unlocked[k] = true
-	Game._check_unlocks()
 	main = load("res://scenes/main.tscn").instantiate()
 	add_child(main)
 	await _frames(10)
+	if fresh:
+		# The opening: welcome screen, gift reveal, Cubert in the barn, Cubert at work.
+		await _shot("start_1_welcome")
+		Game.claim_gift()
+		await _frames(30)
+		await _shot("start_2_gift")
+		main.close_popup()
+		await _frames(6)
+		await _shot("start_3_barn")
+		Game.assign_pen(int(Game.cubes[0].id), 0)
+		for i in 40:
+			Game.tick(1.0, false)
+		await _frames(6)
+		await _shot("start_4_working")
+	for k in Game.unlocked:
+		Game.unlocked[k] = true
+	Game._check_unlocks()
+	main._rebuild()
+	await _frames(6)
 	for s in ["ranch", "wilds", "nest", "gym", "trade", "codex"]:
 		main._set_screen(s)
 		await _frames(6)
